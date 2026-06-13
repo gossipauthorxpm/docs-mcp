@@ -12,3 +12,6 @@ build/
 .mypy_cache/
 htmlcov/
 .coverage
+.vscode/
+.idea/
+.cursorrules
