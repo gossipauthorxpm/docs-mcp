@@ -8,12 +8,13 @@ Layered design: MCP tools delegate to services, services use adapters, adapters 
 flowchart TB
   subgraph mcpLayer [MCP Layer]
     Server[FastMCP Server]
-    Tools["4 Tools: get/write contents & styles"]
+    Tools["5 Tools: plan, get/write contents & styles"]
   end
 
   subgraph serviceLayer [Service Layer]
     ReadSvc[ReadService]
     WriteSvc[WriteService]
+    ReformatSvc[ReformatService]
   end
 
   subgraph adapterLayer [Adapter Layer]
@@ -34,6 +35,7 @@ flowchart TB
   Server --> Tools
   Tools --> ReadSvc
   Tools --> WriteSvc
+  Tools --> ReformatSvc
   ReadSvc --> DocxAdapter
   WriteSvc --> DocxAdapter
   DocxAdapter --> ContentExtractor
@@ -48,10 +50,11 @@ flowchart TB
 
 | Tool | Service | Description |
 |---|---|---|
+| `plan_reformat_docx(draft_path, template_path, sample_blocks=10)` | ReformatService | Draft vs template analysis and suggested style map |
 | `get_contents_from_docx(file_path, offset, limit)` | ReadService | Batch-read content blocks |
-| `write_contents_to_docx(file_path, contents)` | WriteService | Write blocks; create file if missing |
+| `write_contents_to_docx(file_path, contents, offset=0, style_map?)` | WriteService | Batch-write blocks; optional style name remap |
 | `get_styles_from_docx(file_path, offset, limit)` | ReadService | Batch-read style catalog |
-| `write_styles_to_docx(file_path, styles)` | WriteService | Union styles; incoming wins on conflict |
+| `write_styles_to_docx(file_path, styles, offset=0)` | WriteService | Batch union styles; incoming wins on conflict |
 
 ## Layer dependency rules
 

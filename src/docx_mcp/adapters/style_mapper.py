@@ -4,6 +4,14 @@ from __future__ import annotations
 
 import re
 
+# Common aliases for Russian university report templates (override via custom_map).
+DEFAULT_STYLE_ALIASES: dict[str, str] = {
+    "List Paragraph": "ТЕКСТ",
+    "macro": "КОД",
+}
+
+_NORMAL_TO_TEXT_THRESHOLD = 0.5
+
 
 class StyleMapper:
     _HEADING_RE = re.compile(r"^Heading\s+(\d+)$", re.IGNORECASE)
@@ -15,7 +23,10 @@ class StyleMapper:
     ) -> None:
         self._template_styles = list(template_style_names)
         self._template_set = set(template_style_names)
-        self._custom_map = dict(custom_map or {})
+        merged = dict(DEFAULT_STYLE_ALIASES)
+        if custom_map:
+            merged.update(custom_map)
+        self._custom_map = merged
         self.unmapped_styles: list[str] = []
 
     def map_style(self, source_style: str | None) -> str:
@@ -42,6 +53,46 @@ class StyleMapper:
 
         self._track_unmapped(source_style)
         return self._fallback()
+
+    def suggest_map(
+        self,
+        draft_style_usage: dict[str, int],
+    ) -> tuple[dict[str, str], list[str], dict[str, bool]]:
+        """Build a draft→template style map from block usage counts."""
+        self.unmapped_styles = []
+        suggested: dict[str, str] = {}
+        heuristics: dict[str, bool] = {}
+        total_blocks = sum(draft_style_usage.values())
+
+        for source, _count in sorted(
+            draft_style_usage.items(),
+            key=lambda item: (-item[1], item[0]),
+        ):
+            if (
+                source == "Normal"
+                and "ТЕКСТ" in self._template_set
+                and total_blocks > 0
+                and draft_style_usage.get("Normal", 0) / total_blocks > _NORMAL_TO_TEXT_THRESHOLD
+            ):
+                suggested[source] = "ТЕКСТ"
+                heuristics[source] = True
+                continue
+
+            if source in self._template_set:
+                suggested[source] = source
+                continue
+
+            if source in self._custom_map:
+                target = self._custom_map[source]
+                if target in self._template_set:
+                    suggested[source] = target
+                    continue
+
+            target = self.map_style(source)
+            suggested[source] = target
+
+        unmapped = [name for name in self.unmapped_styles if name in draft_style_usage]
+        return suggested, unmapped, heuristics
 
     def _available_heading_levels(self) -> list[int]:
         levels: list[int] = []

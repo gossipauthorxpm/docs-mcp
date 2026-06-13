@@ -5,12 +5,17 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from docx.document import Document as DocxDocument
 
+from docx_mcp.adapters.content_writer import ContentWriter
 from docx_mcp.adapters.docx_adapter import DocxAdapter
+from docx_mcp.adapters.style_migrator import StyleMigrator
 from docx_mcp.domain.models import DocumentBlock, ParagraphBlock, TableBlock
 from docx_mcp.domain.style_profile import ParagraphStyleInfo, StyleProfile
 from docx_mcp.services.read_service import ReadService
 from docx_mcp.services.write_service import WriteService
+
+_UNSET = object()
 
 ASSETS_DIR = Path(__file__).parent / "assets"
 PLAIN_DOCX = ASSETS_DIR / "plain.docx"
@@ -149,3 +154,96 @@ def assert_paragraph_style_field(
         assert actual_value == expected_value, (
             f"Style {name!r}.{field_name}: {actual_value!r} != {expected_value!r}"
         )
+
+
+def assert_style_field_explicit(
+    profile: StyleProfile,
+    name: str,
+    **fields: object,
+) -> None:
+    """Strict field assertion — unlike assert_styles_equal, an expected None
+    means the field MUST be None (explicit reset), not "skip the check"."""
+    style = profile.get_paragraph_style(name)
+    assert style is not None, f"Style {name!r} not found"
+    for field_name, expected_value in fields.items():
+        actual_value = getattr(style, field_name)
+        assert actual_value == expected_value, (
+            f"Style {name!r}.{field_name}: {actual_value!r} != {expected_value!r}"
+        )
+
+
+def get_docx_style_font_color(document: DocxDocument, name: str) -> str | None:
+    """Read the resolved RGB font color of a docx paragraph style as hex, or None."""
+    color = document.styles[name].font.color
+    if color is None:
+        return None
+    try:
+        rgb = color.rgb
+    except Exception:
+        return None
+    return str(rgb) if rgb is not None else None
+
+
+def assert_docx_style_field(
+    document: DocxDocument,
+    name: str,
+    *,
+    bold: object = _UNSET,
+    font_color: object = _UNSET,
+) -> None:
+    """Assert actual OOXML state of a paragraph style definition."""
+    style = document.styles[name]
+    if bold is not _UNSET:
+        assert style.font.bold == bold, (
+            f"Style {name!r}.bold: {style.font.bold!r} != {bold!r}"
+        )
+    if font_color is not _UNSET:
+        actual = get_docx_style_font_color(document, name)
+        assert actual == font_color, (
+            f"Style {name!r}.font_color: {actual!r} != {font_color!r}"
+        )
+
+
+def assert_paragraph_alignment(
+    document: DocxDocument,
+    style_name: str,
+    text_contains: str,
+    expected_alignment: object,
+) -> None:
+    """Assert the paragraph-level alignment of the first paragraph with the
+    given style whose text contains text_contains."""
+    for paragraph in document.paragraphs:
+        style = paragraph.style
+        if style is not None and style.name == style_name and text_contains in paragraph.text:
+            actual = paragraph.paragraph_format.alignment
+            assert actual == expected_alignment, (
+                f"Paragraph {text_contains!r} ({style_name}): "
+                f"alignment {actual!r} != {expected_alignment!r}"
+            )
+            return
+    raise AssertionError(
+        f"No paragraph with style {style_name!r} containing {text_contains!r}"
+    )
+
+
+def run_reformat_pipeline(
+    adapter: DocxAdapter,
+    read_service: ReadService,
+) -> DocxDocument:
+    """In-memory reformat: plain.docx content + format.docx styles union.
+
+    Mirrors the agent MCP workflow (read contents -> read styles ->
+    write contents -> union styles) without writing an output file to disk.
+    """
+    contents = collect_all_contents(read_service, str(PLAIN_DOCX))
+    format_styles_dict = collect_all_styles(read_service, str(FORMAT_DOCX))
+
+    output_doc = adapter.create_document()
+    blocks = [WriteService._block_from_dict(item) for item in contents]
+    ContentWriter().write(output_doc, blocks, replace=True)
+
+    existing = adapter._style_extractor.extract(output_doc)
+    incoming = StyleProfile.from_dict(format_styles_dict)
+    merged = existing.union_with(incoming, master="other")
+    StyleMigrator().apply(output_doc, merged)
+    return output_doc

@@ -36,12 +36,14 @@ class TestReadServiceContents:
         assert len(second["items"]) == 1
         assert second["has_more"] is (second["offset"] + 1 < second["total"])
 
-        collected = collect_all_contents(read_service, str(FORMAT_DOCX), limit=1)
-        assert len(collected) == full["total"]
+        last_offset = full["total"] - 1
+        last = read_service.get_contents(str(FORMAT_DOCX), offset=last_offset, limit=1)
+        assert last["has_more"] is False
+        assert len(last["items"]) == 1
 
     def test_get_contents_includes_table_blocks(self, read_service: ReadService) -> None:
-        result = read_service.get_contents(str(FORMAT_DOCX))
-        table_items = [item for item in result["items"] if item["block_type"] == "table"]
+        collected = collect_all_contents(read_service, str(FORMAT_DOCX), limit=200)
+        table_items = [item for item in collected if item["block_type"] == "table"]
         assert len(table_items) >= 1
         assert len(table_items[0]["rows"]) > 0
 
@@ -64,7 +66,8 @@ class TestReadServiceStyles:
         heading = next(
             s for s in result["paragraph_styles"] if s["name"] == "Heading 1"
         )
-        assert heading["space_before_pt"] == 18.0
+        assert heading["space_before_pt"] == 16.0
+        assert heading["alignment"] == "center"
 
     def test_get_styles_later_batch_omits_section(self, read_service: ReadService) -> None:
         first = read_service.get_styles(str(FORMAT_DOCX), offset=0, limit=1)
