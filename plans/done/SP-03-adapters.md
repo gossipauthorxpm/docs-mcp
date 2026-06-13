@@ -20,11 +20,12 @@ SP-02.
 
 ## User pipeline (reformat)
 
-1. `read_document(plain.docx)` → `DocumentModel` with blocks + default `styles`
-2. `read_document(format.docx)` or `inspect_styles(format.docx)` → template `StyleProfile`
-3. Reformat service copies template styles onto plain document body (SP-05)
+1. `get_contents_from_docx(simple.docx)` → paginated `DocumentBlock` batches (SP-04)
+2. `get_styles_from_docx(format.docx)` → paginated `StyleProfile` batches (SP-04)
+3. `write_contents_to_docx(output.docx, contents)` — create or replace body (SP-05)
+4. `write_styles_to_docx(output.docx, styles)` — union styles; incoming format.docx wins (SP-05)
 
-`read_document()` must populate **both** `blocks` and `styles` on `DocumentModel`. Blocks reference styles by name (`StyleHint`); full definitions are in `DocumentModel.styles`.
+`read_document()` / adapter layer still populates both `blocks` and `styles` internally. MCP exposes them via separate paginated read tools.
 
 ## Out of scope
 

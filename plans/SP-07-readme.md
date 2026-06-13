@@ -34,7 +34,7 @@ SP-06.
 ## Implementation tasks
 
 1. **Title and description** — MCP server for `.docx`, Python 3.11+
-2. **Features** — list v1 tools: `read_docx`, `inspect_styles`, `reformat_docx`
+2. **Features** — list v1 tools: `get_contents_from_docx`, `write_contents_to_docx`, `get_styles_from_docx`, `write_styles_to_docx`
 3. **Architecture** — mermaid diagram from master plan; explain layer rules
 4. **Tech stack** — python-docx, MCP Python SDK, uv
 5. **Quick start**:
@@ -49,8 +49,10 @@ SP-06.
    - Error response format
 7. **User story: Reformat by template**:
    - Example user prompt
-   - Agent workflow (5 steps from master plan)
-8. **Style mapping rules** — table with priority order
+   - Agent workflow: batch read contents → batch read styles → write contents → write styles (union)
+   - Style union rule (incoming format.docx styles win on conflict)
+   - Tool order and pagination (`offset`, `limit`, `has_more`)
+8. **Style union rules** — applied by `write_styles_to_docx`
 9. **Known limitations** — headers/footers, images, text boxes, footnotes, numbering
 10. **Development** — `uv run pytest`, project layout, link to `AGENTS.md`
 11. **Roadmap** — SP-09 through SP-13 topics

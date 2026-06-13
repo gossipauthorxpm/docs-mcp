@@ -8,19 +8,20 @@ Layered design: MCP tools delegate to services, services use adapters, adapters 
 flowchart TB
   subgraph mcpLayer [MCP Layer]
     Server[FastMCP Server]
-    Tools[MCP Tools]
+    Tools["4 Tools: get/write contents & styles"]
   end
 
   subgraph serviceLayer [Service Layer]
-    ReformatSvc[ReformatService]
     ReadSvc[ReadService]
     WriteSvc[WriteService]
   end
 
   subgraph adapterLayer [Adapter Layer]
     DocxAdapter[DocxAdapter]
-    StyleMapper[StyleMapper]
+    ContentWriter[ContentWriter]
+    StyleMigrator[StyleMigrator]
     ContentExtractor[ContentExtractor]
+    StyleExtractor[StyleExtractor]
   end
 
   subgraph domainLayer [Domain Layer]
@@ -29,19 +30,28 @@ flowchart TB
     BlockModel[ParagraphBlock / TableBlock]
   end
 
-  Agent[Cursor Agent] -->|tool calls| Server
+  Agent[Cursor Agent] -->|batch tool calls| Server
   Server --> Tools
-  Tools --> ReformatSvc
   Tools --> ReadSvc
   Tools --> WriteSvc
-  ReformatSvc --> DocxAdapter
   ReadSvc --> DocxAdapter
   WriteSvc --> DocxAdapter
-  DocxAdapter --> StyleMapper
   DocxAdapter --> ContentExtractor
-  ReformatSvc --> domainLayer
+  DocxAdapter --> StyleExtractor
+  DocxAdapter --> ContentWriter
+  DocxAdapter --> StyleMigrator
   ReadSvc --> domainLayer
+  WriteSvc --> domainLayer
 ```
+
+## MCP tools (agent interface)
+
+| Tool | Service | Description |
+|---|---|---|
+| `get_contents_from_docx(file_path, offset, limit)` | ReadService | Batch-read content blocks |
+| `write_contents_to_docx(file_path, contents)` | WriteService | Write blocks; create file if missing |
+| `get_styles_from_docx(file_path, offset, limit)` | ReadService | Batch-read style catalog |
+| `write_styles_to_docx(file_path, styles)` | WriteService | Union styles; incoming wins on conflict |
 
 ## Layer dependency rules
 

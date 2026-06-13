@@ -20,11 +20,23 @@ SP-01.
 
 ## User pipeline (reformat)
 
-1. User creates a plain `.docx` with default Word styles (`plain.docx`).
-2. Agent reads **content blocks** from plain file and **style catalog** from template file (`format.docx`).
-3. Agent (or service) transfers template styles onto the plain document — user gets formatted output.
+Agent orchestrates via four MCP tools (SP-06):
 
-**Design rule:** full style definitions live on `DocumentModel.styles`, not nested inside `blocks`. Blocks carry only a `StyleHint` (style name reference); font, paragraph spacing, alignment, etc. are resolved from `DocumentModel.styles.get_paragraph_style(name)`.
+1. `get_contents_from_docx(simple.docx, offset, limit)` — batch-read content blocks
+2. `get_styles_from_docx(format.docx, offset, limit)` — batch-read style catalog (distill)
+3. `write_contents_to_docx(output.docx, contents)` — write content; create file if missing
+4. `write_styles_to_docx(output.docx, styles)` — union styles onto existing file; **format.docx wins** on name conflict
+
+**Design rule:** full style definitions live on `StyleProfile`, not nested inside blocks. Blocks carry only a `StyleHint` (style name reference).
+
+**Style union rule:**
+
+| Case | Action |
+|---|---|
+| Style only in `format.docx` | Add to target document |
+| Style only in `simple.docx` | Keep (referenced by source blocks) |
+| Same name, different definition | **format.docx wins** — overwrite target |
+| Section setup (margins, page size) | Always from `format.docx` |
 
 ## Out of scope
 
@@ -56,7 +68,7 @@ SP-01.
    - Font: `font_name`, `font_size_pt`, `bold`, `italic`
    - Paragraph: `alignment`, `line_spacing`, `space_before_pt`, `space_after_pt`, indents
    - Metadata: `name`, `base_style`
-8. Implement `SectionSetup`, `StyleProfile` with `style_names()` and `get_paragraph_style(name)` helpers
+8. Implement `SectionSetup`, `StyleProfile` with `style_names()`, `get_paragraph_style(name)`, and `union_with(other, master="other")` helpers — merge two catalogs; on name conflict the `master` profile wins
 9. Add `to_dict()` / `from_dict()` to all models
 10. Write unit tests: roundtrip serialization, JSON encode/decode, `DocumentModel.styles` roundtrip
 
@@ -68,6 +80,7 @@ SP-01.
 - [ ] `DocumentModel.styles` holds full style catalog; blocks hold `StyleHint` references only
 - [ ] `StyleProfile.get_paragraph_style("Heading 1")` returns font + paragraph fields
 - [ ] `StyleProfile.style_names()` returns list of paragraph style names
+- [ ] `StyleProfile.union_with(other, master="other")` merges catalogs; master wins on name conflict
 - [ ] `uv run pytest tests/test_domain_models.py` passes
 
 ## README impact
