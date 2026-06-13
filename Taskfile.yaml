@@ -39,3 +39,8 @@ tasks:
     deps: [sync]
     cmds:
       - "{{.PY}} pytest tests/test_load_assets.py::TestLoadAssetDocuments::test_both_documents_in_debugger --pdb"
+
+  build:mcp:
+    desc: Build docs-mcp Docker image (docker build -t docs-mcp .)
+    cmds:
+      - docker build -t docs-mcp .

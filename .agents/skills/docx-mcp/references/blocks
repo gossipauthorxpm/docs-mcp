@@ -1,0 +1,129 @@
+# Content block schema
+
+Blocks are returned in `get_contents_from_docx` → `items` and passed to `write_contents_to_docx` → `contents`.
+
+Discriminator: `block_type` — `"paragraph"` or `"table"`.
+
+## ParagraphBlock
+
+```json
+{
+  "block_type": "paragraph",
+  "runs": [
+    {
+      "text": "Hello world",
+      "bold": null,
+      "italic": null,
+      "font_name": null,
+      "font_size_pt": null
+    }
+  ],
+  "style": {
+    "name": "Normal",
+    "style_type": "paragraph"
+  }
+}
+```
+
+| Field | Type | Required | Notes |
+|---|---|---|---|
+| `block_type` | `"paragraph"` | yes | Discriminator |
+| `runs` | `RunFormat[]` | yes | Text segments; may be empty |
+| `style` | `StyleHint \| null` | no | Style **name reference** only |
+
+### RunFormat
+
+| Field | Type | Notes |
+|---|---|---|
+| `text` | `string` | Run text (may be empty string) |
+| `bold` | `bool \| null` | `null` = inherit from paragraph style |
+| `italic` | `bool \| null` | |
+| `font_name` | `string \| null` | e.g. `"Courier New"` |
+| `font_size_pt` | `number \| null` | Points |
+
+Concatenate all `runs[].text` for full paragraph text.
+
+### StyleHint
+
+| Field | Type | Notes |
+|---|---|---|
+| `name` | `string` | Paragraph style name in the document |
+| `style_type` | `string` | Default `"paragraph"` |
+
+**Not** a full style definition. Fetch definitions via `get_styles_from_docx`.
+
+## TableBlock
+
+```json
+{
+  "block_type": "table",
+  "rows": [
+    [
+      {
+        "paragraphs": [
+          {
+            "block_type": "paragraph",
+            "runs": [{ "text": "Cell text", "bold": null, "italic": null, "font_name": null, "font_size_pt": null }],
+            "style": { "name": "Normal", "style_type": "paragraph" }
+          }
+        ]
+      }
+    ]
+  ]
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `block_type` | `"table"` | Discriminator |
+| `rows` | `TableCellBlock[][]` | Row-major; each cell has nested paragraphs |
+
+### TableCellBlock
+
+| Field | Type | Notes |
+|---|---|---|
+| `paragraphs` | `ParagraphBlock[]` | One or more paragraphs per cell |
+
+Cells do not have their own style — styling is on nested paragraphs.
+
+## Paginated read envelope
+
+`get_contents_from_docx` wraps blocks:
+
+```json
+{
+  "items": [ "...blocks..." ],
+  "total": 48,
+  "offset": 0,
+  "limit": 10,
+  "has_more": true,
+  "source_path": "/absolute/path/file.docx"
+}
+```
+
+| Field | Notes |
+|---|---|
+| `total` | Total block count in document body |
+| `has_more` | `true` when `offset + limit < total` |
+| `source_path` | Resolved absolute path |
+
+## Write response
+
+`write_contents_to_docx`:
+
+```json
+{
+  "file_path": "/absolute/path/output.docx",
+  "blocks_written": 48,
+  "created": true
+}
+```
+
+`created: true` when the file did not exist before the call.
+
+## Rules for agents
+
+1. Preserve `block_type` when round-tripping content.
+2. Keep `style.name` references — do not replace with inline formatting unless intentional.
+3. Table structure: preserve row/column count and nested paragraph order.
+4. Omitted optional fields may be treated as `null` on read; include required fields on write.

@@ -1,0 +1,145 @@
+# Style profile schema
+
+Styles are returned by `get_styles_from_docx` and passed to `write_styles_to_docx`.
+
+Full style definitions live here — **not** inside content blocks.
+
+## StyleProfile (write payload)
+
+```json
+{
+  "paragraph_styles": [
+    {
+      "name": "Heading 1",
+      "base_style": "Normal",
+      "font_name": null,
+      "font_size_pt": null,
+      "bold": null,
+      "italic": null,
+      "alignment": null,
+      "line_spacing": 1.0,
+      "space_before_pt": 18.0,
+      "space_after_pt": 12.0,
+      "left_indent_cm": null,
+      "right_indent_cm": null,
+      "first_line_indent_cm": null
+    }
+  ],
+  "section": {
+    "page_width_cm": 21.0,
+    "page_height_cm": 29.7,
+    "left_margin_cm": 2.5,
+    "right_margin_cm": 1.0,
+    "top_margin_cm": 1.5,
+    "bottom_margin_cm": 1.5
+  }
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `paragraph_styles` | `ParagraphStyleInfo[]` | Required for write (may be empty list) |
+| `section` | `SectionSetup \| null` | Page size and margins |
+| `source_path` | `string \| null` | Metadata on read; optional on write |
+
+## ParagraphStyleInfo
+
+| Field | Type | Notes |
+|---|---|---|
+| `name` | `string` | **Required.** Unique style name |
+| `base_style` | `string \| null` | Parent style name (Word inheritance) |
+| `font_name` | `string \| null` | e.g. `"Times New Roman"` |
+| `font_size_pt` | `number \| null` | Font size in points |
+| `bold` | `bool \| null` | |
+| `italic` | `bool \| null` | |
+| `alignment` | `string \| null` | e.g. `"left"`, `"center"`, `"right"`, `"justify"` |
+| `line_spacing` | `number \| null` | Line spacing multiplier |
+| `space_before_pt` | `number \| null` | Space before paragraph (pt) |
+| `space_after_pt` | `number \| null` | Space after paragraph (pt) |
+| `left_indent_cm` | `number \| null` | |
+| `right_indent_cm` | `number \| null` | |
+| `first_line_indent_cm` | `number \| null` | |
+
+`null` on a field means "inherit from `base_style` chain" — resolved at write time via `StyleProfile.resolve_inherited()`.
+
+## SectionSetup
+
+| Field | Type | Unit |
+|---|---|---|
+| `page_width_cm` | `number \| null` | cm |
+| `page_height_cm` | `number \| null` | cm |
+| `left_margin_cm` | `number \| null` | cm |
+| `right_margin_cm` | `number \| null` | cm |
+| `top_margin_cm` | `number \| null` | cm |
+| `bottom_margin_cm` | `number \| null` | cm |
+
+## Paginated read envelope
+
+`get_styles_from_docx`:
+
+```json
+{
+  "paragraph_styles": [ "...batch..." ],
+  "section": { "...only when offset=0..." },
+  "total": 33,
+  "offset": 0,
+  "limit": 25,
+  "has_more": true,
+  "source_path": "/absolute/path/format.docx"
+}
+```
+
+| Rule | Detail |
+|---|---|
+| `section` | Present only in first batch (`offset == 0`) |
+| Merge | Concatenate `paragraph_styles` across batches client-side |
+| `has_more` | Loop while `offset + limit < total` |
+
+## Write response
+
+`write_styles_to_docx`:
+
+```json
+{
+  "file_path": "/absolute/path/output.docx",
+  "styles_added": 5,
+  "styles_updated": 12,
+  "styles_unchanged": 8
+}
+```
+
+Target file **must exist**. Call `write_contents_to_docx` first.
+
+## Union rules (`write_styles_to_docx`)
+
+Incoming styles (template) are master on conflict:
+
+| Case | Result |
+|---|---|
+| Style only in incoming | Added to document |
+| Style only in existing file | Kept |
+| Same name, different fields | **Incoming overwrites** |
+| `section` in incoming | Applied to first document section |
+
+Example: if both files define `Heading 1` but template has `space_before_pt: 18.0`, the output uses the template value.
+
+Styles present only in the draft (e.g. custom `macro`) are retained unless the same name exists in the template with a different definition.
+
+## StyleMapper (internal name mapping)
+
+When adapting source style names to a template catalog:
+
+1. Exact name match in template
+2. Optional `custom_map` entry
+3. `Heading N` → nearest available `Heading M` in template
+4. Fallback to `Normal`, or first template style
+
+Unmapped names are recorded in `unmapped_styles` (reformat stats).
+
+## Agent checklist for style merge
+
+1. Paginate `get_styles_from_docx` on template until `has_more` is false.
+2. Save `section` from first batch only.
+3. Build `{ "paragraph_styles": [...], "section": {...} }`.
+4. After `write_contents_to_docx`, call `write_styles_to_docx` with that payload.
+5. Verify no `code` field in the response.
