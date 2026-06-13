@@ -1,0 +1,29 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "docx-mcp"
+version = "0.1.0"
+description = "MCP server for reading and writing .docx files"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "python-docx>=1.1.2",
+    "mcp>=1.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+docx-mcp = "docx_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/docx_mcp"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
