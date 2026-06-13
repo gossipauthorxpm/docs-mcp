@@ -1,0 +1,41 @@
+# https://taskfile.dev
+version: "3"
+
+vars:
+  PY: uv run
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  sync:
+    desc: Install dependencies (uv sync --extra dev)
+    cmds:
+      - uv sync --extra dev
+
+  test:
+    desc: Run all tests
+    deps: [sync]
+    cmds:
+      - "{{.PY}} pytest"
+
+  test:v:
+    desc: Run all tests (verbose)
+    deps: [sync]
+    cmds:
+      - "{{.PY}} pytest -v"
+
+  test:assets:
+    desc: Load plain.docx + format.docx fixture tests
+    deps: [sync]
+    cmds:
+      - "{{.PY}} pytest tests/test_load_assets.py -v"
+
+  test:debug:
+    desc: Load assets test with pdb breakpoint
+    deps: [sync]
+    cmds:
+      - "{{.PY}} pytest tests/test_load_assets.py::TestLoadAssetDocuments::test_both_documents_in_debugger --pdb"

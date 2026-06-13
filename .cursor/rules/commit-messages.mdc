@@ -1,0 +1,78 @@
+---
+description: Commit messages must follow Conventional Commits (commitlint)
+alwaysApply: true
+---
+
+# Commit Messages (Conventional Commits / commitlint)
+
+> **Source Control "Generate commit message" button** reads `.cursorrules` in the repo root, not this file. Keep both in sync.
+
+Follow [Conventional Commits](https://www.conventionalcommits.org/) as enforced by [commitlint](https://commitlint.js.org/) (`@commitlint/config-conventional` defaults).
+
+## Format
+
+```
+type(scope?): subject
+
+body?
+
+footer?
+```
+
+- **header** (first line): `type(scope?): subject` — max **72** characters total
+- **type** and **scope**: lowercase (`lower-case`)
+- **subject**: imperative mood, no trailing period, lowercase start preferred
+- **body**: optional; separate from header with a blank line
+- **footer**: optional; separate from body with a blank line (e.g. `BREAKING CHANGE:`, `Refs:`)
+
+## Allowed types
+
+`build` · `chore` · `ci` · `docs` · `feat` · `fix` · `perf` · `refactor` · `revert` · `style` · `test`
+
+| Type | Use for |
+|------|---------|
+| `feat` | New user-facing behavior |
+| `fix` | Bug fix |
+| `docs` | Documentation only |
+| `refactor` | Code change without fix or feature |
+| `test` | Tests only |
+| `chore` | Maintenance, deps, tooling |
+| `ci` | CI/CD changes |
+| `build` | Build system or external deps |
+| `perf` | Performance improvement |
+| `style` | Formatting, no logic change |
+| `revert` | Revert a prior commit |
+
+## Breaking changes
+
+Use **both** markers (commitlint XNOR rule):
+
+```
+feat(api)!: drop legacy read endpoint
+
+BREAKING CHANGE: removed /v1/read; use /v2/read instead.
+```
+
+## Examples
+
+```
+feat(adapters): add DocxAdapter load method
+fix(domain): handle empty paragraph blocks
+docs: document layered architecture in AGENTS.md
+refactor(services): inject DocxAdapter via constructor
+test: add load_assets integration tests
+```
+
+## Avoid
+
+- `Added feature`, `Fixed bug`, `WIP`, `update stuff` — no type or wrong casing
+- `feat: Add feature.` — sentence case and trailing period
+- `FEAT(scope): subject` — uppercase type
+- Header longer than 72 characters — move detail to body
+- `feat!: change` without `BREAKING CHANGE:` footer (or the reverse)
+
+## When committing
+
+1. Pick the smallest correct **type**; add **scope** when it clarifies the area (e.g. `adapters`, `domain`, `mcp`).
+2. Subject states **what** and **why** in one line; use body for context if needed.
+3. Pass the message via HEREDOC: `git commit -m "$(cat <<'EOF' ... EOF)"`.
