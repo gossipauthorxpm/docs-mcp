@@ -2,7 +2,7 @@
 
 ## Goal
 
-Provide a service-layer API for reading `.docx` files into domain models, with optional block limiting for large documents. This service is the backend for the `read_docx` MCP tool.
+Provide a service-layer API for reading `.docx` files in **paginated batches** — content blocks and styles separately. Backend for `get_contents_from_docx` and `get_styles_from_docx` MCP tools.
 
 ## Depends on
 
@@ -11,17 +11,19 @@ SP-03.
 ## In scope
 
 - `ReadService` class delegating to `DocxAdapter`
-- `read(path, include_styles=True, limit=None) -> dict` returning JSON-ready document model
-- Optional `limit` parameter to cap number of blocks returned
+- `get_contents(file_path, offset=0, limit=50) -> dict` — batch of `DocumentBlock` (paragraph + table)
+- `get_styles(file_path, offset=0, limit=50) -> dict` — batch of `ParagraphStyleInfo` from `StyleProfile`
+- Paginated response envelope: `items`, `total`, `offset`, `limit`, `has_more`, `source_path`
+- `section` included in first styles batch only (`offset == 0`)
 - Structured error propagation via `DocxMcpError.to_dict()`
 - Unit/integration tests with fixture documents
 
 ## Out of scope
 
-- Reformat logic (SP-05)
+- Write operations (SP-05)
 - MCP server wiring (SP-06)
-- Write operations
 - Headers/footers content extraction
+- Caching document parses across batch calls (v1 re-reads file each call)
 
 ## Files to create/modify
 
@@ -29,39 +31,85 @@ SP-03.
 |---|---|
 | `src/docx_mcp/services/read_service.py` | Create |
 | `tests/test_read_service.py` | Create |
-| `tests/fixtures/` | Create directory (fixtures added in SP-05; use programmatic docs here if needed) |
+
+## MCP tool mapping
+
+| MCP tool | Service method |
+|---|---|
+| `get_contents_from_docx(file_path, offset, limit)` | `ReadService.get_contents()` |
+| `get_styles_from_docx(file_path, offset, limit)` | `ReadService.get_styles()` |
+
+## Response shapes
+
+**get_contents:**
+
+```json
+{
+  "items": [ { "block_type": "paragraph", "runs": [...], "style": {...} } ],
+  "total": 42,
+  "offset": 0,
+  "limit": 50,
+  "has_more": false,
+  "source_path": "/path/simple.docx"
+}
+```
+
+**get_styles:**
+
+```json
+{
+  "paragraph_styles": [ { "name": "Heading 1", "font_size_pt": 14.0, ... } ],
+  "section": { "left_margin_cm": 3.0, ... },
+  "total": 33,
+  "offset": 0,
+  "limit": 50,
+  "has_more": false,
+  "source_path": "/path/format.docx"
+}
+```
+
+`section` is present when `offset == 0`, omitted otherwise.
 
 ## Implementation tasks
 
 1. Create `ReadService` accepting `DocxAdapter` via constructor (dependency injection)
-2. Implement `read(path: str, include_styles: bool = True, limit: int | None = None) -> dict`:
-   - Call `adapter.read_document(path)`
-   - If `include_styles=False`, strip `style` from paragraph blocks in response
-   - If `limit` set, truncate `blocks` list to first N items
-   - Return `document.to_dict()` with block count metadata
-3. Catch `DocxMcpError` and re-raise; wrap unexpected exceptions as `INTERNAL_ERROR`
-4. Write tests:
-   - Read a programmatically created `.docx` with headings and paragraphs
-   - Verify block count and style names in output
-   - Verify `limit` parameter truncates blocks
-   - Verify `include_styles=False` omits style fields
+
+2. Implement `get_contents(file_path: str, offset: int = 0, limit: int = 50) -> dict`:
+   - Call `adapter.read_document(file_path)`
+   - Slice `blocks[offset : offset + limit]`
+   - Return paginated envelope with `items` as block dicts
+
+3. Implement `get_styles(file_path: str, offset: int = 0, limit: int = 50) -> dict`:
+   - Call `adapter.inspect_styles(file_path)`
+   - Slice `paragraph_styles[offset : offset + limit]`
+   - Include `section` when `offset == 0`
+
+4. Validate `offset >= 0`, `limit > 0` (cap max limit e.g. 200)
+
+5. Catch `DocxMcpError` and re-raise; wrap unexpected exceptions as `INTERNAL_ERROR`
+
+6. Write tests:
+   - Batch contents from programmatic `.docx` with headings, paragraphs, table
+   - Verify `offset`/`limit` pagination and `has_more`
+   - Batch styles; verify `section` only on first page
    - Verify missing file returns structured error
 
 ## Acceptance criteria
 
-- [ ] `ReadService.read()` returns JSON-serializable dict with `blocks` list
-- [ ] `include_styles=False` removes style information from response
-- [ ] `limit=N` returns at most N blocks
+- [ ] `get_contents()` returns paginated `DocumentBlock` dicts in `items`
+- [ ] `get_styles()` returns paginated `paragraph_styles` with `section` on first batch
+- [ ] `has_more` correctly reflects remaining items
 - [ ] File-not-found raises `DocxMcpError` with code `FILE_NOT_FOUND`
 - [ ] `uv run pytest tests/test_read_service.py` passes
 - [ ] No `docx` imports in `services/read_service.py`
 
 ## README impact
 
-None.
+None (documented in SP-07).
 
 ## Risks
 
 | Risk | Mitigation |
 |---|---|
-| Large documents overwhelm agent context | `limit` parameter defaults to unlimited but documented in SP-07 |
+| Large documents re-parsed on every batch call | Document in SP-07; cache deferred |
+| Agent requests huge `limit` | Cap at 200 blocks/styles per call |

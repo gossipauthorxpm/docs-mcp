@@ -104,6 +104,94 @@ class StyleProfile:
                 return style
         return None
 
+    def union_with(self, other: StyleProfile, master: str = "other") -> StyleProfile:
+        if master not in ("self", "other"):
+            raise ValueError("master must be 'self' or 'other'")
+
+        master_profile = other if master == "other" else self
+        slave_profile = self if master == "other" else other
+
+        result_map: dict[str, ParagraphStyleInfo] = {}
+        order: list[str] = []
+
+        for style in self.paragraph_styles:
+            result_map[style.name] = style
+            order.append(style.name)
+
+        for style in other.paragraph_styles:
+            if style.name not in result_map:
+                order.append(style.name)
+                result_map[style.name] = style
+            elif master == "other":
+                result_map[style.name] = style
+
+        section = master_profile.section or slave_profile.section
+        return StyleProfile(
+            paragraph_styles=[result_map[name] for name in order],
+            section=section,
+        )
+
+    def resolve_inherited(self) -> StyleProfile:
+        style_map = {style.name: style for style in self.paragraph_styles}
+
+        def resolve_one(info: ParagraphStyleInfo, visited: set[str]) -> ParagraphStyleInfo:
+            if info.name in visited:
+                return info
+            visited.add(info.name)
+
+            base: ParagraphStyleInfo | None = None
+            if info.base_style and info.base_style in style_map:
+                base = resolve_one(style_map[info.base_style], visited)
+
+            if base is None:
+                return info
+
+            return ParagraphStyleInfo(
+                name=info.name,
+                base_style=info.base_style,
+                font_name=info.font_name if info.font_name is not None else base.font_name,
+                font_size_pt=(
+                    info.font_size_pt if info.font_size_pt is not None else base.font_size_pt
+                ),
+                bold=info.bold if info.bold is not None else base.bold,
+                italic=info.italic if info.italic is not None else base.italic,
+                alignment=info.alignment if info.alignment is not None else base.alignment,
+                line_spacing=(
+                    info.line_spacing if info.line_spacing is not None else base.line_spacing
+                ),
+                space_before_pt=(
+                    info.space_before_pt
+                    if info.space_before_pt is not None
+                    else base.space_before_pt
+                ),
+                space_after_pt=(
+                    info.space_after_pt
+                    if info.space_after_pt is not None
+                    else base.space_after_pt
+                ),
+                left_indent_cm=(
+                    info.left_indent_cm
+                    if info.left_indent_cm is not None
+                    else base.left_indent_cm
+                ),
+                right_indent_cm=(
+                    info.right_indent_cm
+                    if info.right_indent_cm is not None
+                    else base.right_indent_cm
+                ),
+                first_line_indent_cm=(
+                    info.first_line_indent_cm
+                    if info.first_line_indent_cm is not None
+                    else base.first_line_indent_cm
+                ),
+            )
+
+        return StyleProfile(
+            paragraph_styles=[resolve_one(style, set()) for style in self.paragraph_styles],
+            section=self.section,
+            source_path=self.source_path,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "paragraph_styles": [s.to_dict() for s in self.paragraph_styles],
