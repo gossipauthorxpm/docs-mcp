@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
+from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 
 from docx_mcp.adapters.docx_adapter import DocxAdapter
 from docx_mcp.domain.models import DocumentModel, ParagraphBlock, TableBlock
@@ -57,13 +58,15 @@ class TestLoadAssetDocuments:
 
         heading_style = doc.styles.get_paragraph_style("Heading 1")
         assert heading_style is not None
-        assert heading_style.space_before_pt == 18.0
-        assert heading_style.space_after_pt == 4.0
+        assert heading_style.space_before_pt == 16.0
+        assert heading_style.space_after_pt == 18.0
+        assert heading_style.alignment == "center"
+        assert heading_style.bold is True
 
         normal_style = doc.styles.get_paragraph_style("Normal")
         assert normal_style is not None
         assert normal_style.font_name == "Times New Roman"
-        assert normal_style.font_size_pt == 14.0
+        assert normal_style.font_size_pt == 10.0
 
         table_blocks = [b for b in doc.blocks if isinstance(b, TableBlock)]
         assert len(table_blocks) >= 1
@@ -83,7 +86,7 @@ class TestLoadAssetDocuments:
         assert len(restored.blocks) == len(doc.blocks)
         heading = restored.styles.get_paragraph_style("Heading 1")
         assert heading is not None
-        assert heading.space_before_pt == 18.0
+        assert heading.space_before_pt == 16.0
 
     def test_both_documents_in_debugger(self, adapter: DocxAdapter) -> None:
         """Load both fixtures — set a breakpoint here to inspect domain objects."""
@@ -101,3 +104,47 @@ class TestLoadAssetDocuments:
         format_heading = format_doc.styles.get_paragraph_style("Heading 1")
         assert plain_heading is not None
         assert format_heading is not None
+
+
+def _paragraph_alignment(document, style_name: str, text_contains: str):
+    for paragraph in document.paragraphs:
+        style = paragraph.style
+        if style is not None and style.name == style_name and text_contains in paragraph.text:
+            return paragraph.paragraph_format.alignment
+    raise AssertionError(f"No {style_name!r} paragraph containing {text_contains!r}")
+
+
+class TestFixtureContract:
+    """Lock in the prod-copy contract so regressions surface if assets change."""
+
+    def test_plain_heading_has_theme_colors(self, adapter: DocxAdapter) -> None:
+        profile = adapter.inspect_styles(PLAIN_DOCX)
+        h1 = profile.get_paragraph_style("Heading 1")
+        h2 = profile.get_paragraph_style("Heading 2")
+        assert h1 is not None and h2 is not None
+        assert h1.font_color == "365F91"
+        assert h2.font_color == "4F81BD"
+        assert h1.bold is True
+
+    def test_format_heading_has_template_spacing(self, adapter: DocxAdapter) -> None:
+        profile = adapter.inspect_styles(FORMAT_DOCX)
+        h1 = profile.get_paragraph_style("Heading 1")
+        normal = profile.get_paragraph_style("Normal")
+        assert h1 is not None and normal is not None
+        assert h1.space_before_pt == 16.0
+        assert h1.space_after_pt == 18.0
+        assert h1.alignment == "center"
+        assert h1.bold is True
+        assert normal.font_name == "Times New Roman"
+        assert normal.font_size_pt == 10.0
+
+    def test_format_heading_style_is_centered(self, adapter: DocxAdapter) -> None:
+        profile = adapter.inspect_styles(FORMAT_DOCX)
+        h1 = profile.get_paragraph_style("Heading 1")
+        assert h1 is not None
+        assert h1.alignment == "center"
+
+    def test_plain_title_and_conclusions_not_centered(self, adapter: DocxAdapter) -> None:
+        document = adapter.open(PLAIN_DOCX)
+        assert _paragraph_alignment(document, "Heading 1", "ЛАБОРАТОРНАЯ РАБОТА") is None
+        assert _paragraph_alignment(document, "Heading 1", "ВЫВОДЫ") is None

@@ -12,6 +12,7 @@ from pydantic import Field
 from docx_mcp.adapters.docx_adapter import DocxAdapter
 from docx_mcp.errors import DocxMcpError, internal_error
 from docx_mcp.services.read_service import ReadService
+from docx_mcp.services.reformat_service import ReformatService
 from docx_mcp.services.write_service import WriteService
 
 mcp = FastMCP("docs-mcp")
@@ -19,6 +20,7 @@ mcp = FastMCP("docs-mcp")
 _adapter = DocxAdapter()
 _read_service = ReadService(_adapter)
 _write_service = WriteService(_adapter)
+_reformat_service = ReformatService(_adapter)
 
 # Cursor reads parameter descriptions from inputSchema.properties.*.description.
 # Pydantic adds a "title" per property that can hide descriptions in some MCP UIs;
@@ -63,12 +65,56 @@ _TOOL_INPUT_SCHEMAS: dict[str, dict[str, Any]] = {
             "contents": {
                 "type": "array",
                 "description": (
-                    "Content blocks to write (paragraph/table dicts from get_contents_from_docx)."
+                    "Batch of content blocks (paragraph/table dicts from get_contents_from_docx). "
+                    "Max 200 blocks per call. offset=0 creates or replaces the body; "
+                    "offset>0 appends after existing blocks."
                 ),
                 "items": {"type": "object", "additionalProperties": True},
             },
+            "offset": {
+                "type": "integer",
+                "default": 0,
+                "description": (
+                    "Zero-based index where this batch starts. Use 0 for the first batch "
+                    "(create/replace); for subsequent batches set offset to the previous total."
+                ),
+            },
+            "style_map": {
+                "type": "object",
+                "description": (
+                    "Optional draft→template style name map applied to paragraph blocks "
+                    "before write (from plan_reformat_docx suggested_style_map)."
+                ),
+                "additionalProperties": {"type": "string"},
+            },
         },
         "required": ["file_path", "contents"],
+    },
+    "plan_reformat_docx": {
+        "type": "object",
+        "additionalProperties": False,
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+            "draft_path": {
+                "type": "string",
+                "description": "Path to the draft .docx file to reformat.",
+            },
+            "template_path": {
+                "type": "string",
+                "description": "Path to the template .docx file (format).",
+            },
+            "sample_blocks": {
+                "type": "integer",
+                "default": 10,
+                "description": "Number of sample blocks per file for agent context (1-50).",
+            },
+            "resolve_styles": {
+                "type": "boolean",
+                "default": True,
+                "description": "Resolve inherited style fields before catalog diff.",
+            },
+        },
+        "required": ["draft_path", "template_path"],
     },
     "get_styles_from_docx": {
         "type": "object",
@@ -109,10 +155,19 @@ _TOOL_INPUT_SCHEMAS: dict[str, dict[str, Any]] = {
             "styles": {
                 "type": "object",
                 "description": (
-                    "Style profile: paragraph_styles list and optional section "
-                    "(page size and margins) from get_styles_from_docx."
+                    "Style profile batch: paragraph_styles list (max 200 per call) and optional "
+                    "section (page size and margins) from get_styles_from_docx — section only "
+                    "on the first batch (offset=0)."
                 ),
                 "additionalProperties": True,
+            },
+            "offset": {
+                "type": "integer",
+                "default": 0,
+                "description": (
+                    "Zero-based index of the first paragraph style in this batch. "
+                    "Loop with increasing offset until all template styles are written."
+                ),
             },
         },
         "required": ["file_path", "styles"],
@@ -172,9 +227,10 @@ def get_contents_from_docx(
 @mcp.tool(
     title="Write DOCX contents",
     description=(
-        "Write content blocks to a .docx file. Creates a new file if the path does not exist; "
-        "replaces the document body if it already exists. Pass blocks collected from "
-        "get_contents_from_docx. Call before write_styles_to_docx when reformatting."
+        "Write a batch of content blocks to a .docx file. Max 200 blocks per call. "
+        "offset=0 creates a new file or replaces the document body; offset>0 appends "
+        "the next batch (offset must equal current block count). Loop batches until "
+        "all items from get_contents_from_docx are written. Call before write_styles_to_docx."
     ),
     annotations=ToolAnnotations(
         title="Write DOCX contents",
@@ -191,12 +247,32 @@ def write_contents_to_docx(
     contents: Annotated[
         list[dict],
         Field(
-            description="List of paragraph or table block dicts from get_contents_from_docx."
+            description=(
+                "Batch of paragraph or table block dicts from get_contents_from_docx (max 200)."
+            )
         ),
     ],
+    offset: Annotated[
+        int,
+        Field(
+            description=(
+                "Zero-based start index for this batch. 0 = create/replace; "
+                "next batch offset = previous response total."
+            ),
+        ),
+    ] = 0,
+    style_map: Annotated[
+        dict[str, str] | None,
+        Field(
+            description=(
+                "Optional draft→template style name map (from plan_reformat_docx). "
+                "Remaps paragraph block style.name before write."
+            ),
+        ),
+    ] = None,
 ) -> dict:
     return _safe_call(
-        lambda: _write_service.write_contents(file_path, contents)
+        lambda: _write_service.write_contents(file_path, contents, offset, style_map)
     )
 
 
@@ -236,10 +312,10 @@ def get_styles_from_docx(
 @mcp.tool(
     title="Write DOCX styles",
     description=(
-        "Union paragraph style definitions onto an existing .docx file. The target file must "
-        "already exist — call write_contents_to_docx first. Incoming styles win on name "
-        "conflict. Pass a StyleProfile dict with paragraph_styles and optional section from "
-        "get_styles_from_docx batches."
+        "Union a batch of paragraph style definitions onto an existing .docx file. "
+        "Max 200 styles per call. The target file must already exist — call "
+        "write_contents_to_docx first. Incoming styles win on name conflict. Pass batches "
+        "from get_styles_from_docx; include section only in the first batch (offset=0)."
     ),
     annotations=ToolAnnotations(
         title="Write DOCX styles",
@@ -257,14 +333,59 @@ def write_styles_to_docx(
         dict,
         Field(
             description=(
-                "Style profile with paragraph_styles list and optional section "
-                "(page size and margins)."
+                "Style profile batch with paragraph_styles list and optional section "
+                "(page size and margins) on offset=0 only."
             )
         ),
     ],
+    offset: Annotated[
+        int,
+        Field(description="Zero-based index of the first style in this batch."),
+    ] = 0,
 ) -> dict:
     return _safe_call(
-        lambda: _write_service.write_styles(file_path, styles)
+        lambda: _write_service.write_styles(file_path, styles, offset)
+    )
+
+
+@mcp.tool(
+    title="Plan DOCX reformat",
+    description=(
+        "Analyze a draft against a template before reformat. Returns style usage "
+        "counts, catalog diff, suggested_style_map, sample blocks, and recommended "
+        "actions. Call first; review the map; then write contents with style_map."
+    ),
+    annotations=ToolAnnotations(
+        title="Plan DOCX reformat",
+        readOnlyHint=True,
+        openWorldHint=False,
+    ),
+)
+def plan_reformat_docx(
+    draft_path: Annotated[
+        str,
+        Field(description="Path to the draft .docx file to reformat."),
+    ],
+    template_path: Annotated[
+        str,
+        Field(description="Path to the template .docx file (format)."),
+    ],
+    sample_blocks: Annotated[
+        int,
+        Field(description="Sample blocks per file for context (1-50, default 10)."),
+    ] = 10,
+    resolve_styles: Annotated[
+        bool,
+        Field(description="Resolve inherited fields before catalog diff (default true)."),
+    ] = True,
+) -> dict:
+    return _safe_call(
+        lambda: _reformat_service.plan(
+            draft_path,
+            template_path,
+            sample_blocks,
+            resolve_styles,
+        )
     )
 
 

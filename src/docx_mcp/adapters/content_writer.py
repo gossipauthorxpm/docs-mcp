@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from docx.document import Document as DocxDocument
+from docx.enum.style import WD_STYLE_TYPE
 from docx.shared import Pt
 from docx.table import _Cell
 from docx.text.paragraph import Paragraph
@@ -44,12 +45,10 @@ class ContentWriter:
         block: ParagraphBlock,
     ) -> Paragraph:
         paragraph = parent.add_paragraph()
+        document = parent if isinstance(parent, DocxDocument) else parent.part.document
 
         if block.style and block.style.name:
-            try:
-                paragraph.style = block.style.name
-            except KeyError:
-                pass
+            _apply_paragraph_style(document, paragraph, block.style.name)
 
         paragraph.clear()
         for run_format in block.runs:
@@ -79,16 +78,18 @@ class ContentWriter:
                     if para_idx == 0:
                         paragraph = cell.paragraphs[0]
                         paragraph.clear()
-                        self._fill_paragraph(paragraph, para_block)
+                        self._fill_paragraph(document, paragraph, para_block)
                     else:
                         self._write_paragraph(cell, para_block)
 
-    def _fill_paragraph(self, paragraph: Paragraph, block: ParagraphBlock) -> None:
+    def _fill_paragraph(
+        self,
+        document: DocxDocument,
+        paragraph: Paragraph,
+        block: ParagraphBlock,
+    ) -> None:
         if block.style and block.style.name:
-            try:
-                paragraph.style = block.style.name
-            except KeyError:
-                pass
+            _apply_paragraph_style(document, paragraph, block.style.name)
 
         for run_format in block.runs:
             run = paragraph.add_run(run_format.text)
@@ -100,3 +101,25 @@ class ContentWriter:
                 run.font.name = run_format.font_name
             if run_format.font_size_pt is not None:
                 run.font.size = Pt(run_format.font_size_pt)
+
+
+def _apply_paragraph_style(
+    document: DocxDocument,
+    paragraph: Paragraph,
+    style_name: str,
+) -> None:
+    try:
+        paragraph.style = style_name
+    except KeyError:
+        _ensure_paragraph_style(document, style_name)
+        try:
+            paragraph.style = style_name
+        except KeyError:
+            pass
+
+
+def _ensure_paragraph_style(document: DocxDocument, name: str) -> None:
+    try:
+        document.styles[name]
+    except KeyError:
+        document.styles.add_style(name, WD_STYLE_TYPE.PARAGRAPH)

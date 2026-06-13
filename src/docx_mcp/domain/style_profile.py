@@ -12,6 +12,7 @@ class ParagraphStyleInfo:
     base_style: str | None = None
     font_name: str | None = None
     font_size_pt: float | None = None
+    font_color: str | None = None
     bold: bool | None = None
     italic: bool | None = None
     alignment: str | None = None
@@ -28,6 +29,7 @@ class ParagraphStyleInfo:
             "base_style": self.base_style,
             "font_name": self.font_name,
             "font_size_pt": self.font_size_pt,
+            "font_color": self.font_color,
             "bold": self.bold,
             "italic": self.italic,
             "alignment": self.alignment,
@@ -46,6 +48,7 @@ class ParagraphStyleInfo:
             base_style=data.get("base_style"),
             font_name=data.get("font_name"),
             font_size_pt=data.get("font_size_pt"),
+            font_color=data.get("font_color"),
             bold=data.get("bold"),
             italic=data.get("italic"),
             alignment=data.get("alignment"),
@@ -153,6 +156,7 @@ class StyleProfile:
                 font_size_pt=(
                     info.font_size_pt if info.font_size_pt is not None else base.font_size_pt
                 ),
+                font_color=info.font_color if info.font_color is not None else base.font_color,
                 bold=info.bold if info.bold is not None else base.bold,
                 italic=info.italic if info.italic is not None else base.italic,
                 alignment=info.alignment if info.alignment is not None else base.alignment,

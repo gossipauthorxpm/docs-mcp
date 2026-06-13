@@ -14,6 +14,7 @@ Full style definitions live here — **not** inside content blocks.
       "base_style": "Normal",
       "font_name": null,
       "font_size_pt": null,
+      "font_color": "000000",
       "bold": null,
       "italic": null,
       "alignment": null,
@@ -50,8 +51,9 @@ Full style definitions live here — **not** inside content blocks.
 | `base_style` | `string \| null` | Parent style name (Word inheritance) |
 | `font_name` | `string \| null` | e.g. `"Times New Roman"` |
 | `font_size_pt` | `number \| null` | Font size in points |
-| `bold` | `bool \| null` | |
-| `italic` | `bool \| null` | |
+| `font_color` | `string \| null` | RGB hex, e.g. `"000000"`; `null` resets the color override |
+| `bold` | `bool \| null` | `null` resets the bold override |
+| `italic` | `bool \| null` | `null` resets the italic override |
 | `alignment` | `string \| null` | e.g. `"left"`, `"center"`, `"right"`, `"justify"` |
 | `line_spacing` | `number \| null` | Line spacing multiplier |
 | `space_before_pt` | `number \| null` | Space before paragraph (pt) |
@@ -60,7 +62,7 @@ Full style definitions live here — **not** inside content blocks.
 | `right_indent_cm` | `number \| null` | |
 | `first_line_indent_cm` | `number \| null` | |
 
-`null` on a field means "inherit from `base_style` chain" — resolved at write time via `StyleProfile.resolve_inherited()`.
+`null` on a field means "inherit from `base_style` chain" — resolved at write time via `StyleProfile.resolve_inherited()`. After resolution, `bold`, `italic`, and `font_color` treat `null` as an explicit reset: the override is cleared on the target style so draft theme colors and bold headings do not persist through a reformat.
 
 ## SectionSetup
 

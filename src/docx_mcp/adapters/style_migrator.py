@@ -5,7 +5,8 @@ from __future__ import annotations
 from docx.document import Document as DocxDocument
 from docx.enum.style import WD_STYLE_TYPE
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
-from docx.shared import Cm, Pt
+from docx.oxml.ns import qn
+from docx.shared import Cm, Pt, RGBColor
 
 from docx_mcp.adapters.style_extractor import _extract_paragraph_style, _is_paragraph_style
 from docx_mcp.domain.style_profile import ParagraphStyleInfo, SectionSetup, StyleProfile
@@ -81,10 +82,13 @@ class StyleMigrator:
             font.name = info.font_name
         if info.font_size_pt is not None:
             font.size = Pt(info.font_size_pt)
-        if info.bold is not None:
-            font.bold = info.bold
-        if info.italic is not None:
-            font.italic = info.italic
+        # bold/italic/color use null = explicit reset: clear draft theme overrides
+        font.bold = info.bold
+        font.italic = info.italic
+        if info.font_color is not None:
+            font.color.rgb = RGBColor.from_string(info.font_color)
+        else:
+            _clear_font_color(font)
 
         pf = style.paragraph_format  # type: ignore[attr-defined]
         if info.alignment is not None:
@@ -101,3 +105,12 @@ class StyleMigrator:
             pf.right_indent = Cm(info.right_indent_cm)
         if info.first_line_indent_cm is not None:
             pf.first_line_indent = Cm(info.first_line_indent_cm)
+
+
+def _clear_font_color(font: object) -> None:
+    rPr = font.element.find(qn("w:rPr"))  # type: ignore[attr-defined]
+    if rPr is None:
+        return
+    color = rPr.find(qn("w:color"))
+    if color is not None:
+        rPr.remove(color)

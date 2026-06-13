@@ -243,6 +243,7 @@ Return a paginated batch of paragraph styles from a `.docx` file.
       "base_style": "Normal",
       "font_name": null,
       "font_size_pt": null,
+      "font_color": "000000",
       "bold": null,
       "italic": null,
       "alignment": null,
@@ -397,7 +398,7 @@ Applied by `write_styles_to_docx` via `StyleProfile.union_with(incoming, master=
 | Same name, different definition | **Incoming wins** — overwrites target |
 | Section setup in incoming | Applied from incoming profile |
 
-Styles with `null` field values inherit from `base_style` at write time (`StyleProfile.resolve_inherited()`).
+Styles with `null` field values inherit from `base_style` at write time (`StyleProfile.resolve_inherited()`). For the run-level overrides `bold`, `italic`, and `font_color`, a resolved `null` is an explicit reset: the corresponding override is cleared in the target style so draft theme artifacts (e.g. blue, bold headings) do not survive a reformat.
 
 ### StyleMapper (adapter helper)
 
@@ -420,6 +421,7 @@ Not supported in the current release:
 - Footnotes and endnotes
 - Numbering restart / list numbering preservation
 - Run-level formatting when a named paragraph style exists (deferred — styles applied in step 4 override inline hints)
+- Paragraph-level direct formatting (e.g. a centered title set on the paragraph, not in the style) — not carried by content blocks; `ParagraphAligner` covers only the title/conclusions heuristic used in the reformat tests
 - Document parse caching — each batch call re-reads the file from disk
 
 ## Development

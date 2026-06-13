@@ -71,13 +71,17 @@ class ReadService:
             raise internal_error(str(exc)) from exc
 
     @staticmethod
-    def _validate_pagination(offset: int, limit: int) -> None:
+    def _validate_offset(offset: int) -> None:
         if offset < 0:
             raise DocxMcpError(
                 code="INVALID_PATH",
                 message="offset must be >= 0",
                 details={"offset": offset},
             )
+
+    @staticmethod
+    def _validate_pagination(offset: int, limit: int) -> None:
+        ReadService._validate_offset(offset)
         if limit <= 0:
             raise DocxMcpError(
                 code="INVALID_PATH",

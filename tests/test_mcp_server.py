@@ -10,6 +10,7 @@ from docx_mcp.server import (
     get_contents_from_docx,
     get_styles_from_docx,
     mcp,
+    plan_reformat_docx,
     write_contents_to_docx,
     write_styles_to_docx,
 )
@@ -25,6 +26,7 @@ class TestMcpToolRegistration:
             "write_contents_to_docx",
             "get_styles_from_docx",
             "write_styles_to_docx",
+            "plan_reformat_docx",
         }
 
 
@@ -58,6 +60,14 @@ class TestMcpReadTools:
         assert "section" in result
         json.dumps(result)
 
+    def test_plan_reformat_returns_map(self) -> None:
+        result = plan_reformat_docx(str(PLAIN_DOCX), str(FORMAT_DOCX), sample_blocks=3)
+
+        assert "code" not in result
+        assert "suggested_style_map" in result
+        assert result["suggested_style_map"]["List Paragraph"] == "ТЕКСТ"
+        json.dumps(result)
+
 
 class TestMcpWriteTools:
     def test_write_contents_creates_file(
@@ -74,6 +84,46 @@ class TestMcpWriteTools:
         assert result["created"] is True
         assert output.exists()
         json.dumps(result)
+
+    def test_write_contents_batch(
+        self,
+        read_service: ReadService,
+        tmp_path: Path,
+    ) -> None:
+        all_items = collect_all_contents(read_service, str(PLAIN_DOCX), limit=5)
+        assert len(all_items) > 5
+        output = tmp_path / "batch_output.docx"
+
+        first = write_contents_to_docx(str(output), all_items[:5], offset=0)
+        assert "code" not in first
+        assert first["total"] == 5
+
+        second = write_contents_to_docx(str(output), all_items[5:], offset=5)
+        assert "code" not in second
+        assert second["total"] == len(all_items)
+
+    def test_write_contents_with_style_map(
+        self,
+        read_service: ReadService,
+        tmp_path: Path,
+    ) -> None:
+        items = collect_all_contents(read_service, str(PLAIN_DOCX), limit=200)
+        list_blocks = [
+            b for b in items if b.get("style", {}).get("name") == "List Paragraph"
+        ]
+        assert list_blocks
+        output = tmp_path / "mapped.docx"
+
+        result = write_contents_to_docx(
+            str(output),
+            list_blocks[:2],
+            style_map={"List Paragraph": "ТЕКСТ"},
+        )
+
+        assert "code" not in result
+        assert result["styles_remapped"] == 2
+        written = read_service.get_contents(str(output))
+        assert written["items"][0]["style"]["name"] == "ТЕКСТ"
 
     def test_write_styles_requires_existing_file(self) -> None:
         result = write_styles_to_docx(
